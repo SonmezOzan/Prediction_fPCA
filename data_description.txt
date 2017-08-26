@@ -1,0 +1,17 @@
+Data description
+================
+
+We have 1/2 hour average values from 01.10.2010 till 31.03.2011
+
+Date:  clear
+Time:  clear
+NR:    intraday number 1-48
+PM GR: PM10 at station Graz-Mitte (city center)
+PM JU: PM10 at station Judendorf-Sued (suburb)
+T GR:  Temperature at Graz Mitte (350 m)
+T KL:  Temperature at Kalkleiten (700 m)
+
+There were only very few missing values, we used ad hoc
+methods to replace them by estimates (neighboring values
+or interpolation ...)
+

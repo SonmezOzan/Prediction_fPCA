@@ -1,0 +1,87 @@
+# load source for VAR estimation and library fda
+
+source("VAR.estimation.R")
+library(fda)
+library(matrixcalc)
+library(xtable)
+
+# Import PM10 data
+
+pm<-read.csv(file="data.txt",header = TRUE)
+pm.graz<-sqrt(pm[,4])
+
+# N = number of grid points = 48 (half-hourly observations)
+# n = number of functional observations = length(pm[,4])/48
+
+N=48
+n=length(pm.graz)/48
+
+# Transform the Graz data to matrix (48x182)
+
+pm.discrete=matrix(pm.graz,nrow=N,ncol=n) 
+pm.discrete=pm.discrete[,-(90:96)]
+
+# plot the non-centered data
+pmn=Data2fd(args,pm.discrete,basis)
+pmn.mean=mean.fd(pmn) 
+plot(pmn,ylim=c(0,13))
+par(new=TRUE)
+plot(pmn.mean,lwd=4,ylim=c(0,13))
+
+# Remove mean and weekend effects
+
+seven=seq(1:25)*7
+six=seq(1:25)*7-1
+five=seq(1:25)*7-2
+four=seq(1:25)*7-3
+three=seq(1:25)*7-4
+two=seq(1:25)*7-5
+one=seq(1:25)*7-6
+
+m1=rowSums(pm.discrete[,one])/25
+m2=rowSums(pm.discrete[,two])/25
+m3=rowSums(pm.discrete[,three])/25
+m4=rowSums(pm.discrete[,four])/25
+m5=rowSums(pm.discrete[,five])/25
+m6=rowSums(pm.discrete[,six])/25
+m7=rowSums(pm.discrete[,seven])/25
+
+pm.discrete[,one]<-pm.discrete[,one]-m1
+pm.discrete[,two]<-pm.discrete[,two]-m2
+pm.discrete[,three]<-pm.discrete[,three]-m3
+pm.discrete[,four]<-pm.discrete[,four]-m4
+pm.discrete[,five]<-pm.discrete[,five]-m5
+pm.discrete[,six]<-pm.discrete[,six]-m6
+pm.discrete[,seven]<-pm.discrete[,seven]-m7
+
+
+# Transformation to functional data
+
+args=seq(0,1,length=48)
+basis=create.bspline.basis(c(0,1),nbasis=20,norder=4)
+pmn=Data2fd(args,pm.discrete,basis)
+
+# Eigenfunctions on the detrended data
+efs<-pca.fd(pmn,nharm=3)$harmonics[1:3]
+
+
+# Effect of PC1
+plot(pmn.mean,lwd=3,ylim=c(4,8))
+par(new=TRUE)
+plot.fd(pmn.mean+0.5*efs[1],lwd=2,lty=2,col=3,ylim=c(4,8))
+par(new=TRUE)
+plot(pmn.mean-0.5*efs[1],lwd=2,lty=2,col=2,ylim=c(4,8))
+
+# Effect of PC2
+plot(pmn.mean,lwd=3,ylim=c(4,8))
+par(new=TRUE)
+plot.fd(pmn.mean+0.5*efs[2],lwd=2,lty=2,col=3,ylim=c(4,8))
+par(new=TRUE)
+plot(pmn.mean-0.5*efs[2],lwd=2,lty=2,col=2,ylim=c(4,8))
+
+# Effect of PC3
+plot(pmn.mean,lwd=3,ylim=c(4,8))
+par(new=TRUE)
+plot.fd(pmn.mean+0.5*efs[3],lwd=2,lty=2,col=3,ylim=c(4,8))
+par(new=TRUE)
+plot(pmn.mean-0.5*efs[3],lwd=2,lty=2,col=2,ylim=c(4,8))

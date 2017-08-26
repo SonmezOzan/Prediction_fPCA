@@ -1,0 +1,182 @@
+# load sources needed
+
+source("VAR.estimation.R")
+source("FPE.R")
+source("KR.R")
+library(fda)
+library(matrixcalc)
+library(xtable)
+library(vars)
+
+# Import PM10 data
+
+pm<-read.csv(file="data.txt",header = TRUE)
+pm.graz<-sqrt(pm[,4])
+
+# N = number of grid points = 48 (half-hourly observations)
+# n = number of functional observations = length(pm[,4])/48
+
+N=48
+n=length(pm.graz)/48
+
+# Transform the Graz data to matrix (48x182)
+
+pm.discrete=matrix(pm.graz,nrow=N,ncol=n) 
+pm.discrete=pm.discrete[,-(90:96)]
+
+# Remove mean and weekend effects
+
+seven=seq(1:25)*7
+six=seq(1:25)*7-1
+five=seq(1:25)*7-2
+four=seq(1:25)*7-3
+three=seq(1:25)*7-4
+two=seq(1:25)*7-5
+one=seq(1:25)*7-6
+
+m1=rowSums(pm.discrete[,one])/25
+m2=rowSums(pm.discrete[,two])/25
+m3=rowSums(pm.discrete[,three])/25
+m4=rowSums(pm.discrete[,four])/25
+m5=rowSums(pm.discrete[,five])/25
+m6=rowSums(pm.discrete[,six])/25
+m7=rowSums(pm.discrete[,seven])/25
+
+pm.discrete[,one]<-pm.discrete[,one]-m1
+pm.discrete[,two]<-pm.discrete[,two]-m2
+pm.discrete[,three]<-pm.discrete[,three]-m3
+pm.discrete[,four]<-pm.discrete[,four]-m4
+pm.discrete[,five]<-pm.discrete[,five]-m5
+pm.discrete[,six]<-pm.discrete[,six]-m6
+pm.discrete[,seven]<-pm.discrete[,seven]-m7
+
+
+# Transformation to functional data
+
+args=seq(0,1,length=48)
+basis=create.bspline.basis(c(0,1),nbasis=10,norder=4)
+pm.functional=Data2fd(args,pm.discrete,basis)
+# One may consider using nbasis=20 or so and leave D=nharmy=10 below. The results were
+# fairly similar though.
+
+# Using a moving window, we choose five intervals for training data, each lenth 100
+
+pm.f1=pm.functional[1:115]
+pm.f2=pm.functional[16:130]
+pm.f3=pm.functional[31:145]
+pm.f4=pm.functional[46:160]
+pm.f5=pm.functional[61:175]
+
+# We apply the two methods to each interval, and use it to predict the next 15 values
+# (The functions method.FPE and method.KR have been modifed in this folder, in order
+# that they pick now 100 traing data and 15 data to perform prediction)
+
+e1=cbind(method.FPE(pm.f1,D=10,Pmax=5),method.KR(z=pm.f1,nharmy=10,Pmax=3))
+e2=cbind(method.FPE(pm.f2,D=10,Pmax=5),method.KR(z=pm.f2,nharmy=10,Pmax=3))
+e3=cbind(method.FPE(pm.f3,D=10,Pmax=5),method.KR(z=pm.f3,nharmy=10,Pmax=3))
+e4=cbind(method.FPE(pm.f4,D=10,Pmax=5),method.KR(z=pm.f4,nharmy=10,Pmax=3))
+e5=cbind(method.FPE(pm.f5,D=10,Pmax=5),method.KR(z=pm.f5,nharmy=10,Pmax=3))
+
+# Put everything together in a table.
+
+e=rbind(e1,e2,e3,e4,e5)
+
+
+
+#################################################################
+#
+# Forecasting with covariates
+#
+# We use the entire code of above and continue by including a 
+# vector of covariates. We take the temperature difference Graz-Kalkleiten
+# as our covariate. Since it is again functional we use a PCA to reduce
+# it to a vector.
+
+# We compute temperture difference between Graz and Kalkleiten
+
+temp.diff<-(pm[,6]-pm[,7])
+td.discrete=matrix(temp.diff,nrow=N,ncol=n) 
+td.discrete=td.discrete[,-(90:96)]
+
+# Now everything is transformed to functional
+
+args=seq(0,1,length=48)
+basis=create.bspline.basis(c(0,1),nbasis=10,norder=4)
+td.functional=Data2fd(args,td.discrete,basis)
+
+td.f1=td.functional[1:115]
+td.f2=td.functional[16:130]
+td.f3=td.functional[31:145]
+td.f4=td.functional[46:160]
+td.f5=td.functional[61:175]
+
+
+# Choose the parameters p, r and d and the segment that should be analysed
+# one case use the file estimates_of_p_and_d_with_covariates.txt to obtain
+# estimates of p and d via the FPEX method.
+
+out=matrix(0,5,2)
+FTS=pm.f1;TEM=td.f1;p=1;d=3;r=2
+
+
+for(j in 1:5){
+
+	if(j==1){FTS=pm.f1;TEM=td.f1;p=2;d=3;r=2
+} else{ if(j==2){FTS=pm.f2;TEM=td.f2;p=3;d=3;r=2
+} else{ if(j==3){FTS=pm.f3;TEM=td.f3;p=3;d=3;r=2
+} else{ if(j==4){FTS=pm.f4;TEM=td.f4;p=3;d=3;r=2
+} else{ FTS=pm.f5;TEM=td.f5;p=1;d=5;r=2
+}
+}
+}
+}
+
+
+	MSE.reg=c()
+       
+  	# compute PC scores of Y and R based on first 100 observations
+
+	Y.all=t(pca.fd(FTS[1:100],nharm=d)$scores)
+	R.all=t(pca.fd(TEM[1:100],nharm=r)$scores)
+
+	# compute PHI via prediciton equations
+
+	PHI=fcX(Y=Y.all,R=R.all,p=p)
+
+	# compute the eigenfunctions
+
+        harm.pm=pca.fd(FTS[1:100],nharm=d)$harmonics
+        harm.td=pca.fd(TEM[1:100],nharm=r)$harmonics
+
+	# compute the 15 future scores using estimated eigenfunctions 	
+	for(i in 1:15){
+	Y.all=cbind(Y.all,t(inprod(FTS[100+i],harm.pm)))
+	}
+
+	for(i in 1:15){
+	R.all=cbind(R.all,t(inprod(TEM[100+i],harm.td)))
+	}	
+	
+	# Compute the 15 forecasts and the MSEs
+
+	
+	for(k in 1:15){
+		pred=rep(0,d)
+		for(i in 1:p){pred=pred+PHI[,((i-1)*d+1):(i*d)]%*%Y.all[,100-i+k]}
+		pred=pred+PHI[,(p*d+1):(p*d+r)]%*%R.all[,100+k-1]
+		f.pred=pred[1]*harm.pm[1]
+		if(d>1){for(l in 2:d){f.pred=f.pred+pred[l]*harm.pm[l]}}
+		MSE.reg=c(MSE.reg,inprod(f.pred-FTS[100+k],f.pred-FTS[100+k]))
+	}
+
+	out[j,1]=mean(MSE.reg)
+	out[j,2]=median(MSE.reg)
+}
+
+ee=cbind(e,out)
+colnames(ee)<-c("p.FPE","d.FPE","FPE","MSE.FPE","MED.FPE","SD.FPE","Varprop.FPE",
+"p.KR","d.KR","MSE.KR","MED.KR","SD.KR","valp1","valp2","valp3","Varprop.KR","MSE.reg","MED.reg")
+
+# Put the interesting columns together
+
+table=ee[,c(1,2,3,4,5,17,18,8,9,10,11)]
